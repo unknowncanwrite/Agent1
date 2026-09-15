@@ -280,9 +280,24 @@ class ToolRegistry:
             return "ERROR: python timed out."
 
     def _web_search(self, a: dict) -> str:
-        q = urllib.parse.quote(a.get("query", ""))
-        if not q:
+        q = a.get("query", "")
+        if not q.strip():
             return "ERROR: query is empty."
+        searx = os.environ.get("AGENT1_SEARCH_URL", "")
+        if searx:  # self-hosted SearXNG: {url}?q=..&format=json
+            try:
+                url = f"{searx}?q={urllib.parse.quote(q)}&format=json"
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=25) as r:
+                    data = json.load(r)
+                out = []
+                for i, hit in enumerate(data.get("results", [])[:int(a.get("count", 5))]):
+                    out.append(f"{i+1}. {hit.get('title', '')}\n   {hit.get('url', '')}\n"
+                               f"   {str(hit.get('content', ''))[:300]}")
+                return "\n\n".join(out) or "No results."
+            except Exception as e:
+                return f"ERROR: search failed: {e}"
+        q = urllib.parse.quote(q)
         page = ""
         last_err: Exception | None = None
         for url in (f"https://html.duckduckgo.com/html/?q={q}",

@@ -56,10 +56,23 @@ sandboxed `bash` + `python_run`, keyless `web_search` (with fallback) + `web_fet
 validation, sandboxing, destructive-command blocking in every approval mode, and audit logging.
 Drop extra tools in a dir and set `AGENT1_PLUGINS` — each `.py` with `register(registry)` loads automatically.
 
+## 🔴 True-live test (your machine, free models, $0)
+
+```bash
+python examples/05_live_smoke.py
+```
+
+6 checks against real OpenRouter: key → live `:free` catalog → chat →
+autonomous write+verify task → live web research → crew run, with a PASS/FAIL
+report. (Firewalled sandboxes that block openrouter.ai get a clear STOP message;
+everything else is covered by the offline + wire-live suites below.)
+
 ## 🧪 Hardened by brutal testing
 
-- **55 adversarial tests** (`python -m tests`, zero deps): garbage args, path escapes,
-  fork-bombs, timeouts, bad regex, malformed diffs/JSON, server fuzz, full CLI e2e.
+- **57 tests** (`python -m tests`, zero deps): 55 adversarial (garbage args, path
+  escapes, fork-bombs, timeouts, bad regex/diffs/JSON, server fuzz, CLI e2e) +
+  2 wire-live (real HTTP vs fake OpenRouter: discovery, 429 rotation, native +
+  markdown tool calls; fake SearXNG + page fetch). Self-host search via `AGENT1_SEARCH_URL`.
 - **Context compaction** — long runs summarize history instead of overflowing context.
 - **Transcripts + JSONL traces** for every run (`workspace/.trace/`), `/api/trace` live feed in the Web UI.
 - **Offline demo** — `AGENT1_DEMO=1` (or `--demo`) runs everything without key/network.
