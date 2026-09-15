@@ -44,7 +44,25 @@ python -m agent1.cli chat                                   # interactive chat +
 python -m agent1.cli run "Fix the bug in app.py" --mode code --role coder
 python -m agent1.cli crew "Build a habit-tracker prototype" --mode sequential     # | hierarchical | debate
 python -m agent1.cli models                                  # show free-model cascade + live discovery
+python -m agent1.cli doctor                                  # diagnose setup (key, network, workspace)
+python -m tests                                              # 55 brutal offline tests, ~25s
 ```
+
+## 🧰 15 tools + plugins
+
+`read/write/edit/list_files`, `grep` (code search), `apply_patch` (unified diffs),
+sandboxed `bash` + `python_run`, keyless `web_search` (with fallback) + `web_fetch`,
+`remember`/`recall` (long-term memory), `todo_add/done/list` — all with required-arg
+validation, sandboxing, destructive-command blocking in every approval mode, and audit logging.
+Drop extra tools in a dir and set `AGENT1_PLUGINS` — each `.py` with `register(registry)` loads automatically.
+
+## 🧪 Hardened by brutal testing
+
+- **55 adversarial tests** (`python -m tests`, zero deps): garbage args, path escapes,
+  fork-bombs, timeouts, bad regex, malformed diffs/JSON, server fuzz, full CLI e2e.
+- **Context compaction** — long runs summarize history instead of overflowing context.
+- **Transcripts + JSONL traces** for every run (`workspace/.trace/`), `/api/trace` live feed in the Web UI.
+- **Offline demo** — `AGENT1_DEMO=1` (or `--demo`) runs everything without key/network.
 
 ## 🐍 Python SDK
 

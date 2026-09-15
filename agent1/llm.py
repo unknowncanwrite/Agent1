@@ -173,6 +173,8 @@ class OpenRouterClient:
                 if not calls:
                     calls = extract_tool_calls(text)
                     text = strip_tool_blocks(text)
+                self.last_model = model
+                self.last_errors = []
                 return ChatResult(text=text, tool_calls=calls, model=model, usage=usage)
             except Exception as e:
                 msg = str(e)
@@ -186,6 +188,7 @@ class OpenRouterClient:
                                       "(check connection / firewall for openrouter.ai)")
                         break
                 continue
+        self.last_errors = errors[:8]
         raise RuntimeError("All free models failed:\n" + "\n".join(errors[:8]))
 
     @property

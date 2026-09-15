@@ -54,7 +54,7 @@ class Tool:
 
 
 DANGEROUS = re.compile(
-    r"(rm\s+-rf\s+/(?:\s|$)|\brm\b.*\s+/\s|mkfs|dd\s+of=|:(){|shutdown|reboot|"
+    r"(rm\s+-rf\s+/(?:\s|$)|\brm\b.*\s+/\s|mkfs|dd\s+of=|:\s*\(\s*\)\s*\{|shutdown|reboot|"
     r"curl[^|]*\|\s*(ba)?sh|wget[^|]*\|\s*(ba)?sh)", re.I)
 
 
@@ -103,12 +103,12 @@ class ToolRegistry:
 
     def _approve(self, name: str, args: dict) -> str | None:
         """Return denial message, or None if approved."""
+        cmd = str(args.get("command", "")) + str(args.get("code", ""))
+        if DANGEROUS.search(cmd):
+            return "BLOCKED: command matches destructive pattern."  # all modes
         if self.approval == "auto":
             return None
         risky = name in ("bash", "python_run", "write_file", "edit_file")
-        cmd = str(args.get("command", "")) + str(args.get("code", ""))
-        if DANGEROUS.search(cmd):
-            return "BLOCKED: command matches destructive pattern."
         if self.approval == "manual" and risky:
             try:
                 ans = input(f"\nApprove {name} {json.dumps(args)[:300]}? [y/N] ").strip()
@@ -118,10 +118,20 @@ class ToolRegistry:
         return None  # safe: destructive blocked, rest auto-approved
 
     def execute(self, name: str, args: dict | None = None) -> str:
-        args = args or {}
+        if not isinstance(args, dict):
+            return f"ERROR: args for '{name}' must be an object, got {type(args).__name__}."
+        if not isinstance(name, str) or not name:
+            return "ERROR: tool name must be a non-empty string."
         tool = self._tools.get(name)
         if not tool:
-            return f"ERROR: unknown tool '{name}'. Available: {', '.join(self.names())}"
+            msg = f"ERROR: unknown tool '{name}'. Available: {', '.join(self.names())}"
+            self._log(name if isinstance(name, str) else "?", args, msg)
+            return msg
+        missing = [k for k in tool.parameters.get("required", []) if k not in args]
+        if missing:
+            msg = f"ERROR: '{name}' missing required args: {', '.join(missing)}."
+            self._log(name, args, msg)
+            return msg
         denied = self._approve(name, args)
         if denied:
             self._log(name, args, denied)
@@ -188,6 +198,17 @@ class ToolRegistry:
             {"type": "object", "properties": {"n": {"type": "integer"}},
              "required": ["n"]}, self._todo_done))
         self.register(Tool("todo_list", "Show the plan.", S, lambda a: self._todo_list()))
+        self.register(Tool("grep", "Regex search across workspace files. Returns file:line matches.",
+            {"type": "object", "properties": {
+                "pattern": {"type": "string"},
+                "path": {"type": "string", "default": "."},
+                "glob": {"type": "string", "default": "*"},
+                "ignore_case": {"type": "boolean", "default": False}}, "required": ["pattern"]},
+            self._grep))
+        self.register(Tool("apply_patch", "Apply a unified diff to workspace files (multi-file edits).",
+            {"type": "object", "properties": {
+                "diff": {"type": "string"}}, "required": ["diff"]},
+            self._apply_patch))
 
     # -- implementations --
     def _read_file(self, a: dict) -> str:
@@ -259,14 +280,22 @@ class ToolRegistry:
             return "ERROR: python timed out."
 
     def _web_search(self, a: dict) -> str:
-        q = urllib.parse.quote(a["query"])
-        url = f"https://html.duckduckgo.com/html/?q={q}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        try:
-            with urllib.request.urlopen(req, timeout=25) as r:
-                page = r.read().decode("utf-8", "ignore")
-        except Exception as e:
-            return f"ERROR: search failed: {e}"
+        q = urllib.parse.quote(a.get("query", ""))
+        if not q:
+            return "ERROR: query is empty."
+        page = ""
+        last_err: Exception | None = None
+        for url in (f"https://html.duckduckgo.com/html/?q={q}",
+                    f"https://lite.duckduckgo.com/lite/?q={q}"):
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=25) as r:
+                    page = r.read().decode("utf-8", "ignore")
+                break
+            except Exception as e:
+                last_err = e
+        if not page:
+            return f"ERROR: search failed: {last_err}"
         hits = re.findall(r'(?is)<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>.*?'
                           r'class="result__snippet"[^>]*>(.*?)</a>' , page)
         if not hits:
@@ -320,3 +349,139 @@ class ToolRegistry:
             return "(no plan yet)"
         return "\n".join(f"{'[x]' if t['done'] else '[ ]'} {i+1}. {t['task']}"
                          for i, t in enumerate(self.todos))
+
+    def _grep(self, a: dict) -> str:
+        import fnmatch
+        try:
+            rx = re.compile(a["pattern"], re.I if a.get("ignore_case") else 0)
+        except re.error as e:
+            return f"ERROR: bad regex: {e}"
+        try:
+            base = _safe_path(self.root, a.get("path", "."))
+        except PermissionError as e:
+            return f"ERROR: {e}"
+        if base.is_file():
+            files = [base]
+        elif base.is_dir():
+            files = [p for p in base.rglob("*")
+                     if p.is_file() and ".trace" not in p.parts
+                     and not any(part.startswith(".") for part in p.relative_to(self.root).parts)]
+        else:
+            return f"ERROR: not found: {a.get('path')}"
+        glob = a.get("glob", "*")
+        hits, scanned = [], 0
+        for p in sorted(files)[:2000]:
+            if not fnmatch.fnmatch(p.name, glob):
+                continue
+            try:
+                if p.stat().st_size > 500_000:
+                    continue
+                text = p.read_text(errors="strict")
+            except Exception:
+                continue  # binary / unreadable
+            scanned += 1
+            for i, line in enumerate(text.splitlines(), 1):
+                if rx.search(line):
+                    rel = p.relative_to(self.root)
+                    hits.append(f"{rel}:{i}: {line.strip()[:200]}")
+                    if len(hits) >= 60:
+                        return "\n".join(hits) + "\n…(capped at 60 hits)"
+        return "\n".join(hits) or f"No matches (scanned {scanned} files)."
+
+    def _apply_patch(self, a: dict) -> str:
+        """Minimal unified-diff applier: ---/+++ headers + @@ hunks, context-aware."""
+        diff = a.get("diff", "")
+        if not diff.strip():
+            return "ERROR: empty diff."
+        cur_file: Path | None = None
+        hunks: list[tuple[Path, list[str]]] = []
+        buf: list[str] = []
+        old: str | None = None
+        for raw in diff.splitlines():
+            line = raw.rstrip("\n")
+            if line.startswith("--- "):
+                old = line[4:].strip().removeprefix("a/").removeprefix("b/")
+            elif line.startswith("+++ "):
+                new = line[4:].strip().removeprefix("a/").removeprefix("b/")
+                if cur_file and buf:
+                    hunks.append((cur_file, buf))
+                buf = []
+                try:
+                    cur_file = _safe_path(self.root, new if new != "/dev/null" else (old or ""))
+                except PermissionError as e:
+                    return f"ERROR: {e}"
+            elif line.startswith("@@"):
+                buf.append(line)
+            elif cur_file is not None and (line.startswith((" ", "+", "-")) or line == ""):
+                buf.append(line)
+        if cur_file and buf:
+            hunks.append((cur_file, buf))
+        if not hunks:
+            return "ERROR: no parseable hunks (need ---/+++/@@ headers)."
+        applied = []
+        for path, hunk_lines in hunks:
+            ok, msg = self._apply_hunks(path, hunk_lines)
+            if not ok:
+                return f"ERROR applying to {path.name}: {msg} (earlier files kept: {applied})"
+            applied.append(str(path.relative_to(self.root)))
+        return "Patched: " + ", ".join(applied)
+
+    def _apply_hunks(self, path: Path, hunk_lines: list[str]) -> tuple[bool, str]:
+        lines = path.read_text(errors="ignore").splitlines() if path.exists() else []
+        out: list[str] = []
+        i = 0  # cursor in original
+        j = 0
+        hunk_re = re.compile(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+        while j < len(hunk_lines):
+            m = hunk_re.match(hunk_lines[j])
+            if not m:
+                j += 1
+                continue
+            start = int(m.group(1))
+            # copy through to hunk start (1-based, forgiving)
+            while i < min(start - 1, len(lines)):
+                out.append(lines[i]); i += 1
+            j += 1
+            while j < len(hunk_lines) and not hunk_lines[j].startswith("@@"):
+                h = hunk_lines[j]
+                if h.startswith("\\"):
+                    j += 1
+                    continue  # "\ No newline at end of file"
+                if h.startswith("+") and not h.startswith("+++"):
+                    out.append(h[1:])
+                elif h.startswith("-") and not h.startswith("---"):
+                    i += 1  # drop original line
+                else:  # context (or bare line treated as context)
+                    out.append(h[1:] if h.startswith(" ") else h)
+                    i += 1
+                j += 1
+        out.extend(lines[i:])
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("\n".join(out) + ("\n" if out else ""))
+        except Exception as e:
+            return False, str(e)
+        return True, "ok"
+
+
+def load_plugins(registry: ToolRegistry, plugins_dir: str) -> list[str]:
+    """Load extra tools from *.py files. Each may define register(registry).
+    Only runs when AGENT1_PLUGINS is set — off by default for safety."""
+    import importlib.util
+    loaded = []
+    base = Path(plugins_dir or "")
+    if not plugins_dir or not base.is_dir():
+        return loaded
+    for f in sorted(base.glob("*.py")):
+        try:
+            spec = importlib.util.spec_from_file_location(f"a1plug_{f.stem}", f)
+            if not spec or not spec.loader:
+                continue
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            if hasattr(mod, "register"):
+                mod.register(registry)
+                loaded.append(f.stem)
+        except Exception:
+            continue
+    return loaded

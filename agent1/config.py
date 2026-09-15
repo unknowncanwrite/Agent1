@@ -90,6 +90,10 @@ class AgentConfig:
     max_retries_per_model: int = 1
     referer: str = "https://github.com/unknowncanwrite/Agent1"
     app_name: str = "Agent1-Omni"
+    demo: bool = False           # offline MockClient (AGENT1_DEMO=1)
+    history_char_budget: int = 60000  # sliding-window compaction above this
+    plugins_dir: str = ""        # AGENT1_PLUGINS: extra tool .py files
+    web_timeout: int = 25
 
     @classmethod
     def load(cls) -> "AgentConfig":

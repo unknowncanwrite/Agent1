@@ -71,8 +71,16 @@ class Agent:
                                   memory=self.memory,
                                   audit_log=str(trace_dir / "audit.jsonl"))
         self.trace_path = trace_dir / f"trace-{time.strftime('%Y%m%d-%H%M%S')}.jsonl"
+        self.transcript_path = trace_dir / f"transcript-{time.strftime('%Y%m%d-%H%M%S')}.md"
         self.history: list[dict] = []
         self.steps = 0
+        self.last_model = ""
+        self.compactions = 0
+        if self.config.plugins_dir:
+            from .tools import load_plugins
+            n = load_plugins(self.tools, self.config.plugins_dir)
+            if n:
+                self._emit(type="plugins", loaded=n)
 
     # ----- internals -----
     def _emit(self, **e):
@@ -92,6 +100,49 @@ class Agent:
     def reset(self):
         self.history, self.steps = [], 0
         self.tools.todos = []
+        self.compactions = 0
+
+    # ----- context management (beats agents that crash on long runs) -----
+    def _history_chars(self) -> int:
+        return sum(len(str(m.get("content", ""))) for m in self.history)
+
+    def _compact(self):
+        """Sliding-window compaction: keep system + task + last 10 msgs,
+        summarize the middle (LLM summary, truncation fallback)."""
+        budget = self.config.history_char_budget
+        if self._history_chars() <= budget or len(self.history) <= 14:
+            return
+        self.compactions += 1
+        system = [m for m in self.history if m["role"] == "system"]
+        rest = [m for m in self.history if m["role"] != "system"]
+        if len(rest) <= 11:
+            return
+        middle, tail = rest[:-10], rest[-10:]
+        summary = ""
+        try:
+            res = self.client.chat(
+                [{"role": "user", "content":
+                  "Summarize this agent transcript tail into 10 dense bullets "
+                  "(decisions, file changes, errors, pending work):\n" +
+                  "\n".join(f"{m['role']}: {str(m['content'])[:800]}" for m in middle)[-8000:]}],
+                task="fast", max_tokens=800)
+            summary = res.text[:3000]
+        except Exception:
+            summary = "(summary unavailable) " + \
+                "\n".join(f"{m['role']}: {str(m['content'])[:200]}" for m in middle[-6:])
+        self.history = system + [{"role": "system",
+            "content": f"[Compacted {len(middle)} msgs]\n{summary}"}] + tail
+        self._emit(type="compact", dropped=len(middle),
+                   chars=self._history_chars())
+
+    def _save_transcript(self, task: str, final: str):
+        try:
+            with open(self.transcript_path, "w") as f:
+                f.write(f"# {task[:120]}\n\nFINAL:\n{final}\n\n---\n")
+                for m in self.history:
+                    f.write(f"\n## {m['role']}\n{str(m.get('content',''))[:3000]}\n")
+        except Exception:
+            pass
 
     # ----- main loop -----
     def run(self, task: str, max_steps: int | None = None) -> str:
@@ -110,6 +161,7 @@ class Agent:
             self.steps = i + 1
             if i > 0 and i % self.config.reflect_every == 0:
                 self.history.append({"role": "user", "content": REFLECT})
+            self._compact()
             try:
                 res: ChatResult = self.client.chat(
                     self.history, task=self.task_kind,
@@ -118,6 +170,7 @@ class Agent:
                 self._emit(type="llm_error", error=str(e)[:500])
                 final = f"FINAL: I could not reach any free model. Last error: {e}"
                 break
+            self.last_model = res.model
             self._emit(type="llm", model=res.model, text=res.text[:2000],
                        tool_calls=res.tool_calls, step=i + 1)
             self.history.append({"role": "assistant", "content": res.text or ""})
@@ -140,8 +193,11 @@ class Agent:
 
         final = final.replace("FINAL:", "").strip() or "Done."
         self.memory.save_episode(task, final)
+        self._save_transcript(task, final)
         self._emit(type="task_done", steps=self.steps, answer=final[:2000],
-                   stats=getattr(self.client, "stats", {}))
+                   stats=getattr(self.client, "stats", {}),
+                   model=self.last_model, compactions=self.compactions,
+                   trace=str(self.trace_path), transcript=str(self.transcript_path))
         return final
 
     def ask(self, message: str) -> str:
@@ -149,9 +205,11 @@ class Agent:
         if not self.history:
             self.history = [{"role": "system", "content": self._system()}]
         self.history.append({"role": "user", "content": message})
+        self._compact()
         res: ChatResult = self.client.chat(self.history, task=self.task_kind,
                                            tools=self.tools.openai_tools())
-        # execute at most one tool round in chat mode, then re-ask
+        self.last_model = res.model
+        # execute tool rounds in chat mode (capped), then re-ask
         rounds = 0
         while res.tool_calls and rounds < 4:
             self.history.append({"role": "assistant", "content": res.text or ""})
@@ -159,8 +217,10 @@ class Agent:
                 out = self.tools.execute(call["tool"], call.get("arguments", {}))
                 self.history.append({"role": "user", "content":
                     f"[{call['tool']} result]\n{out[:6000]}"})
+            self._compact()
             res = self.client.chat(self.history, task=self.task_kind,
                                    tools=self.tools.openai_tools())
+            self.last_model = res.model
             rounds += 1
         self.history.append({"role": "assistant", "content": res.text})
         return res.text
