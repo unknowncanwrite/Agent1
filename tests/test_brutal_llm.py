@@ -34,13 +34,16 @@ def test_extract_shapes():
 
 
 def test_cascade_routing():
-    for task, expect in [("code", ("coder", "laguna")), ("research", ("nemotron",)),
-                         ("reason", ("oss-120b", "deepseek")), ("fast", ("glm", "oss-20b")),
-                         ("general", ("nex", "llama", "qwen3-next")),
-                         ("nonsense-task", ("free",))]:
+    for task, expect in [("code", ("qwen3-coder",)), ("research", ("nemotron",)),
+                         ("reason", ("deepseek",)), ("fast", ("glm",)),
+                         ("general", ("nemotron",)),
+                         ("nonsense-task", ("nemotron",))]:
         c = model_cascade_for(task)
         assert len(c) >= 10 and all(m.endswith(":free") for m in c)
         assert any(e in c[0] for e in expect), f"{task} -> {c[0]}"
+    # leaders come from evidence table, no dupes, stable length
+    g = model_cascade_for("general")
+    assert g[1] == "google/gemma-4-31b-it:free" and len(g) == len(set(g))
     # override pinning
     cc = cfg(model_override="x/y:free").cascade("code")
     assert cc[0] == "x/y:free" and len(cc) == len(set(cc))

@@ -63,6 +63,9 @@ def main(argv=None):
     add_common(s)
 
     m = sub.add_parser("models", help="Show free-model cascade")
+    m.add_argument("--explain", action="store_true", help="Show τ² scores + why each rank")
+    m.add_argument("--task", default="general",
+                   choices=["general", "code", "research", "reason", "fast", "vision"])
     add_common(m)
 
     d = sub.add_parser("doctor", help="Diagnose setup (key, network, models, workspace)")
@@ -81,9 +84,15 @@ def main(argv=None):
 
     if args.cmd == "models":
         from .llm import OpenRouterClient
-        print("Free-model cascade (task-routed, auto-fallback):")
-        for i, mid in enumerate(config.cascade(), 1):
-            print(f"  {i:2d}. {mid}")
+        from .config import FREE_MODELS
+        info = {m.id: m for m in FREE_MODELS}
+        print(f"Free-model cascade for task '{args.task}' (auto-fallback):")
+        for i, mid in enumerate(config.cascade(args.task), 1):
+            m = info.get(mid)
+            if getattr(args, "explain", False) and m:
+                print(f"  {i:2d}. {mid}\n      τ² tools={m.tau2 or '—'}% ctx={m.context//1000}k — {m.note}")
+            else:
+                print(f"  {i:2d}. {mid}")
         if not args.demo and config.api_key:
             live = OpenRouterClient(config).discover_free_models()
             print(f"\nLive :free on OpenRouter right now: {len(live)}")
