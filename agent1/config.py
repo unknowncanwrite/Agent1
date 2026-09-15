@@ -106,6 +106,10 @@ class AgentConfig:
             workspace=os.environ.get("AGENT1_WORKSPACE", "./workspace"),
             approval=os.environ.get("AGENT1_APPROVAL", "safe"),
             max_steps=int(os.environ.get("AGENT1_MAX_STEPS", "25")),
+            demo=os.environ.get("AGENT1_DEMO", "") in ("1", "true", "yes"),
+            history_char_budget=int(os.environ.get("AGENT1_HISTORY_BUDGET", "60000")),
+            plugins_dir=os.environ.get("AGENT1_PLUGINS", ""),
+            web_timeout=int(os.environ.get("AGENT1_WEB_TIMEOUT", "25")),
         )
 
     def cascade(self, task: str | None = None) -> list[str]:

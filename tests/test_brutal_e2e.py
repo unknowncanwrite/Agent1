@@ -87,3 +87,18 @@ def test_patch_roundtrip_big():
 def test_demo_env_var():
     r = run_cli("run", "x", env={"AGENT1_DEMO": "1"})
     assert r.returncode == 0, r.stderr
+    assert "Mock final" in r.stdout  # proves MockClient engaged, not a network fail
+    # direct loader check
+    import os as _os
+    from agent1.config import AgentConfig
+    old = _os.environ.get("AGENT1_DEMO")
+    try:
+        _os.environ["AGENT1_DEMO"] = "1"
+        assert AgentConfig.load().demo is True
+        _os.environ["AGENT1_DEMO"] = "0"
+        assert AgentConfig.load().demo is False
+    finally:
+        if old is None:
+            _os.environ.pop("AGENT1_DEMO", None)
+        else:
+            _os.environ["AGENT1_DEMO"] = old

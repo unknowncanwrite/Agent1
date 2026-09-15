@@ -209,18 +209,23 @@ class Agent:
         res: ChatResult = self.client.chat(self.history, task=self.task_kind,
                                            tools=self.tools.openai_tools())
         self.last_model = res.model
+        self._emit(type="llm", model=res.model, text=res.text[:2000],
+                   tool_calls=res.tool_calls, chat=True)
         # execute tool rounds in chat mode (capped), then re-ask
         rounds = 0
         while res.tool_calls and rounds < 4:
             self.history.append({"role": "assistant", "content": res.text or ""})
             for call in res.tool_calls[:2]:
                 out = self.tools.execute(call["tool"], call.get("arguments", {}))
+                self._emit(type="tool", tool=call["tool"], output=out[:2000], chat=True)
                 self.history.append({"role": "user", "content":
                     f"[{call['tool']} result]\n{out[:6000]}"})
             self._compact()
             res = self.client.chat(self.history, task=self.task_kind,
                                    tools=self.tools.openai_tools())
             self.last_model = res.model
+            self._emit(type="llm", model=res.model, text=res.text[:2000],
+                       tool_calls=res.tool_calls, chat=True)
             rounds += 1
         self.history.append({"role": "assistant", "content": res.text})
         return res.text
