@@ -1,0 +1,4 @@
+# Agent1 Omni needs ZERO required dependencies (pure Python stdlib).
+# These two are optional conveniences:
+requests>=2.31
+python-dotenv>=1.0

@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+.workspace/
+workspace/.trace/
+*.db
+*.log
+.venv/
+node_modules/
+.DS_Store
