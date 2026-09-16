@@ -1,0 +1,55 @@
+# OMNI-AGENT - Security First
+.env
+.env.local
+*.key
+openrouter_key.txt
+
+# Workspace - ignore generated content but keep structure
+workspace/memory/*
+workspace/transcripts/*
+workspace/sessions/*
+workspace/logs/*
+workspace/todo_api/
+workspace/github_stats/
+workspace/research/
+workspace/graph_checkpoints/
+!workspace/memory/.gitkeep
+!workspace/skills/.gitkeep
+!workspace/transcripts/.gitkeep
+!workspace/sessions/.gitkeep
+!workspace/logs/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Logs
+*.log
+
+# Chroma
+chroma/
+chroma_db/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/

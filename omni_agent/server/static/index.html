@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OMNI-AGENT - Manus-like AI Employee</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        omni: {
+                            50: '#f0f9ff',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #475569; }
+        .message-content pre { background: #0f172a; border-radius: 8px; padding: 12px; overflow-x: auto; }
+        .message-content code { font-family: 'JetBrains Mono', monospace; font-size: 0.875em; }
+        .tool-call { border-left: 3px solid #0ea5e9; }
+        .thinking { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+    </style>
+</head>
+<body class="bg-[#0a0a0b] text-white h-screen flex flex-col overflow-hidden">
+    <!-- Header - Manus style -->
+    <header class="h-14 border-b border-zinc-800 bg-[#111113] flex items-center justify-between px-4 shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 bg-gradient-to-br from-sky-500 to-violet-600 rounded-lg flex items-center justify-center font-bold">O</div>
+            <span class="font-semibold text-[15px]">OMNI-AGENT</span>
+            <span class="text-[11px] px-2 py-0.5 bg-zinc-800 rounded-full text-zinc-400">ULTIMATE</span>
+            <div class="h-4 w-px bg-zinc-800 mx-2"></div>
+            <span class="text-xs text-zinc-500 hidden md:inline">Beats all 50+ frameworks • Free OpenRouter models</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <select id="modelSelect" class="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-sky-500">
+                <option value="qwen/qwen3-coder:free">⚡ Qwen3 Coder (Best Coding)</option>
+                <option value="nvidia/nemotron-3-ultra-550b-a55b:free">🧠 Nemotron Ultra 1M (Research)</option>
+                <option value="openai/gpt-oss-120b:free">💡 GPT-OSS 120B (Reasoning)</option>
+                <option value="google/gemma-4-31b-it:free">🌐 Gemma 4 31B (Multimodal)</option>
+                <option value="openrouter/free">🔀 Auto Router (Free)</option>
+            </select>
+            <select id="modeSelect" class="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-300">
+                <option value="single">Single Agent</option>
+                <option value="crew">Dev Crew (5 agents)</option>
+                <option value="research">Research Crew</option>
+            </select>
+            <button id="deployBtn" class="bg-white text-black px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-zinc-200">Deploy to Render</button>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+        <!-- Left Sidebar - Sessions & Workspace -->
+        <aside class="w-[280px] bg-[#111113] border-r border-zinc-800 flex flex-col shrink-0 hidden lg:flex">
+            <div class="p-3">
+                <button id="newChatBtn" class="w-full bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm flex items-center gap-2 transition">
+                    <i class="fas fa-plus text-zinc-500"></i> New Chat
+                </button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto scrollbar-thin px-2">
+                <div class="mb-6">
+                    <h3 class="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider px-2 mb-2">Recent Sessions</h3>
+                    <div id="sessionsList" class="space-y-1">
+                        <!-- Sessions injected -->
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <h3 class="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider px-2 mb-2 flex items-center justify-between">
+                        Workspace Files
+                        <button id="refreshFilesBtn" class="hover:text-white"><i class="fas fa-sync text-[10px]"></i></button>
+                    </h3>
+                    <div id="fileTree" class="text-xs mono space-y-1 px-2">
+                        <div class="text-zinc-600">Loading...</div>
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <h3 class="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider px-2 mb-2">Memory</h3>
+                    <div id="memoryList" class="px-2 text-xs text-zinc-400">
+                        <div class="text-zinc-600">No memory yet</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-3 border-t border-zinc-800">
+                <div class="bg-zinc-900 rounded-lg p-3 text-xs">
+                    <div class="flex items-center gap-2 mb-2">
+                        <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        <span class="text-zinc-300 font-medium">OMNI Status</span>
+                    </div>
+                    <div class="space-y-1 text-zinc-500">
+                        <div>Free Models: <span class="text-green-400">11 active</span></div>
+                        <div>Cost: <span class="text-white">$0.00</span> (free tier)</div>
+                        <div id="tokenCount">Tokens: 0</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area - Manus style -->
+        <main class="flex-1 flex flex-col bg-[#0a0a0b] overflow-hidden relative">
+            <!-- Messages -->
+            <div id="messagesContainer" class="flex-1 overflow-y-auto scrollbar-thin p-4 md:p-6 space-y-6">
+                <!-- Welcome -->
+                <div id="welcomeScreen" class="max-w-3xl mx-auto text-center py-12">
+                    <div class="w-16 h-16 bg-gradient-to-br from-sky-500 to-violet-600 rounded-2xl flex items-center justify-center font-bold text-2xl mx-auto mb-6">O</div>
+                    <h1 class="text-2xl font-semibold mb-3">Welcome to OMNI-AGENT</h1>
+                    <p class="text-zinc-400 text-sm mb-8 max-w-xl mx-auto">The ultimate agent that overcomes all 50+ frameworks. Like Manus, but free, open, and runs on your PC or Render.</p>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-left max-w-2xl mx-auto">
+                        <button class="example-prompt bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl p-4 text-left transition group">
+                            <div class="flex items-center gap-2 mb-2">
+                                <i class="fas fa-code text-sky-500"></i>
+                                <span class="text-sm font-medium">Build a REST API</span>
+                            </div>
+                            <p class="text-xs text-zinc-500 group-hover:text-zinc-400">Build a todo API with FastAPI, SQLite, tests, and docs. Save to workspace.</p>
+                        </button>
+                        <button class="example-prompt bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl p-4 text-left transition group">
+                            <div class="flex items-center gap-2 mb-2">
+                                <i class="fas fa-search text-violet-500"></i>
+                                <span class="text-sm font-medium">Deep Research</span>
+                            </div>
+                            <p class="text-xs text-zinc-500 group-hover:text-zinc-400">Research top AI agent frameworks 2026 and create comparison report.</p>
+                        </button>
+                        <button class="example-prompt bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl p-4 text-left transition group">
+                            <div class="flex items-center gap-2 mb-2">
+                                <i class="fas fa-users text-green-500"></i>
+                                <span class="text-sm font-medium">Dev Team</span>
+                            </div>
+                            <p class="text-xs text-zinc-500 group-hover:text-zinc-400">Use 5-agent crew (PM, Coder, Reviewer, Tester, Writer) to build GitHub stats CLI.</p>
+                        </button>
+                        <button class="example-prompt bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl p-4 text-left transition group">
+                            <div class="flex items-center gap-2 mb-2">
+                                <i class="fas fa-globe text-orange-500"></i>
+                                <span class="text-sm font-medium">Web Scraping</span>
+                            </div>
+                            <p class="text-xs text-zinc-500 group-hover:text-zinc-400">Scrape trending AI repos on GitHub and analyze why they're popular.</p>
+                        </button>
+                    </div>
+
+                    <div class="mt-8 flex items-center justify-center gap-4 text-[11px] text-zinc-600">
+                        <span><i class="fas fa-check text-green-500"></i> Free models</span>
+                        <span><i class="fas fa-check text-green-500"></i> Works on PC</span>
+                        <span><i class="fas fa-check text-green-500"></i> Deploy to Render</span>
+                        <span><i class="fas fa-check text-green-500"></i> $0 cost</span>
+                    </div>
+                </div>
+
+                <div id="messages" class="max-w-3xl mx-auto space-y-6"></div>
+
+                <!-- Thinking indicator -->
+                <div id="thinkingIndicator" class="max-w-3xl mx-auto hidden">
+                    <div class="flex gap-3">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-sky-500 to-violet-600 flex items-center justify-center text-xs font-bold shrink-0">O</div>
+                        <div class="flex-1 bg-zinc-900 border border-zinc-800 rounded-2xl rounded-tl-sm p-4">
+                            <div class="flex items-center gap-2 text-sm text-zinc-400 thinking">
+                                <div class="flex gap-1">
+                                    <div class="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce"></div>
+                                    <div class="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                                    <div class="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                                </div>
+                                <span id="thinkingText">OMNI is thinking...</span>
+                            </div>
+                            <div id="toolCalls" class="mt-3 space-y-2"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input Area - Manus style -->
+            <div class="p-4 border-t border-zinc-800 bg-[#111113] shrink-0">
+                <div class="max-w-3xl mx-auto">
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl focus-within:border-zinc-700 transition">
+                        <textarea id="messageInput" rows="1" placeholder="Ask OMNI to build, research, code, analyze... (Shift+Enter for new line)" class="w-full bg-transparent border-0 rounded-t-2xl px-4 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-0 resize-none max-h-32 scrollbar-thin"></textarea>
+                        <div class="flex items-center justify-between px-3 pb-3">
+                            <div class="flex items-center gap-2">
+                                <button class="p-1.5 hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-zinc-300 transition"><i class="fas fa-paperclip text-xs"></i></button>
+                                <button class="p-1.5 hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-zinc-300 transition"><i class="fas fa-code text-xs"></i></button>
+                                <span class="text-[10px] text-zinc-600 ml-2">Free models • $0 cost • Press Enter to send</span>
+                            </div>
+                            <button id="sendBtn" class="bg-white text-black rounded-xl px-4 py-1.5 text-sm font-medium hover:bg-zinc-200 transition flex items-center gap-2">
+                                Send <i class="fas fa-arrow-up text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-center gap-4 mt-3 text-[10px] text-zinc-600">
+                        <span>OMNI can make mistakes. Verify important info.</span>
+                        <span class="hidden md:inline">•</span>
+                        <span class="hidden md:inline">Workspace: ./workspace • Memory: persistent • Tools: 16+</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Sidebar - Computer / Manus style -->
+        <aside class="w-[320px] bg-[#111113] border-l border-zinc-800 flex flex-col shrink-0 hidden xl:flex">
+            <div class="h-12 border-b border-zinc-800 flex items-center px-4">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-desktop text-zinc-500 text-xs"></i>
+                    <span class="text-xs font-medium text-zinc-300">OMNI's Computer</span>
+                    <span class="text-[10px] px-1.5 py-0.5 bg-green-900/30 text-green-400 rounded">LIVE</span>
+                </div>
+            </div>
+            
+            <div class="flex border-b border-zinc-800">
+                <button class="computer-tab active flex-1 py-2.5 text-xs font-medium text-white border-b border-white" data-tab="tools">Tool Calls</button>
+                <button class="computer-tab flex-1 py-2.5 text-xs font-medium text-zinc-500 hover:text-zinc-300" data-tab="files">Files</button>
+                <button class="computer-tab flex-1 py-2.5 text-xs font-medium text-zinc-500 hover:text-zinc-300" data-tab="browser">Browser</button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto scrollbar-thin">
+                <div id="computer-tools" class="computer-panel p-3 space-y-3">
+                    <div class="text-xs text-zinc-600 text-center py-8">
+                        <i class="fas fa-terminal text-2xl mb-2 block"></i>
+                        Tool calls will appear here<br>when OMNI is working
+                    </div>
+                </div>
+                <div id="computer-files" class="computer-panel hidden p-3">
+                    <div id="computerFilesList" class="space-y-2 text-xs">
+                        <div class="text-zinc-600">No files yet</div>
+                    </div>
+                </div>
+                <div id="computer-browser" class="computer-panel hidden p-3">
+                    <div class="bg-zinc-900 rounded-lg border border-zinc-800 p-3">
+                        <div class="flex items-center gap-2 mb-2 text-xs text-zinc-500">
+                            <i class="fas fa-globe"></i> Browser Preview
+                        </div>
+                        <div class="bg-white rounded h-32 flex items-center justify-center text-zinc-500 text-xs">
+                            Web fetch results will show here
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-3 border-t border-zinc-800">
+                <div class="text-[11px] text-zinc-500">
+                    <div class="flex justify-between mb-1"><span>Model:</span><span id="currentModel" class="text-zinc-300">qwen/qwen3-coder:free</span></div>
+                    <div class="flex justify-between mb-1"><span>Mode:</span><span id="currentMode" class="text-zinc-300">Single Agent</span></div>
+                    <div class="flex justify-between"><span>Session:</span><span id="currentSession" class="text-zinc-300 mono">new</span></div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Deploy Modal -->
+    <div id="deployModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full p-6">
+            <h3 class="font-semibold mb-4 flex items-center gap-2"><i class="fas fa-rocket text-sky-500"></i> Deploy to Render</h3>
+            <div class="space-y-4 text-sm">
+                <div class="bg-zinc-950 rounded-lg p-3 mono text-xs">
+                    <div class="text-zinc-500 mb-2"># Render deployment - 1 click</div>
+                    <div>1. Push to GitHub (already done)</div>
+                    <div>2. Go to dashboard.render.com</div>
+                    <div>3. New → Web Service → Connect repo</div>
+                    <div>4. Settings:</div>
+                    <div class="pl-4 text-zinc-400">
+                        Build: pip install -r requirements.txt<br>
+                        Start: python main.py serve --host 0.0.0.0 --port $PORT<br>
+                        Env: OPENROUTER_API_KEY=your_key
+                    </div>
+                    <div>5. Deploy → Get URL → Chat from anywhere!</div>
+                </div>
+                <div class="flex gap-2">
+                    <a href="https://dashboard.render.com" target="_blank" class="flex-1 bg-white text-black rounded-lg py-2 text-center text-sm font-medium">Open Render</a>
+                    <button id="closeDeployModal" class="flex-1 bg-zinc-800 rounded-lg py-2 text-sm">Close</button>
+                </div>
+                <p class="text-[11px] text-zinc-500">Works on: Render, Railway, Fly.io, your PC, VPS, Docker. Single command, $0 with free models.</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

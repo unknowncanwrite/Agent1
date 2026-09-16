@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: omni-agent
+    runtime: python
+    env: python
+    region: oregon
+    plan: free
+    branch: arena/01a0a65b-agent1
+    buildCommand: ./build.sh
+    startCommand: ./start.sh
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OMNI_WORKSPACE
+        value: ./workspace
+      - key: OMNI_DEFAULT_MODEL
+        value: qwen/qwen3-coder:free
+      - key: PYTHON_VERSION
+        value: 3.11.11
+    healthCheckPath: /api/health
+    autoDeploy: false
