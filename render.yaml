@@ -6,8 +6,8 @@ services:
     region: oregon
     plan: free
     branch: arena/01a0a65b-agent1
-    buildCommand: ./build.sh
-    startCommand: ./start.sh
+    buildCommand: pip install -r requirements-render.txt --break-system-packages
+    startCommand: python3 main.py serve --host 0.0.0.0 --port $PORT
     envVars:
       - key: OPENROUTER_API_KEY
         sync: false
@@ -17,5 +17,7 @@ services:
         value: qwen/qwen3-coder:free
       - key: PYTHON_VERSION
         value: 3.11.11
+      - key: PIP_BREAK_SYSTEM_PACKAGES
+        value: 1
     healthCheckPath: /api/health
     autoDeploy: false
